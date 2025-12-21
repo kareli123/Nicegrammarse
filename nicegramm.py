@@ -7,11 +7,11 @@ from aiogram import Bot, Dispatcher, types, Router
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile, WebAppInfo, BufferedInputFile
 
-BOT_TOKEN = '8202878099:AAES9ybI0KKY9e_ixXrUMXtwqs-TL2r8nQg'
+BOT_TOKEN = '8410110349:AAE5WM8PHsg85cvGmPuNq55XS8w_FcifjR8'
 
 ROOT_ADMINS = [8187498719, 8396015606]
 
-WEB_APP_URL = "https://kareli123.github.io/nicegram/"
+WEB_APP_URL = "https://kareli123.github.io/Nicegrammarse/"
 
 WEB_SERVER_HOST = "0.0.0.0"
 WEB_SERVER_PORT = int(os.environ.get("PORT", 8080))
