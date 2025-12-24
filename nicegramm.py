@@ -239,9 +239,8 @@ async def cmd_text(message: types.Message):
 
 # ================= START =================
 
-async def main():
-    init_db()
-
+async def start_web_server():
+    """Запуск веб-сервера отдельной задачей"""
     app = web.Application()
     app.add_routes(routes)
 
@@ -249,9 +248,45 @@ async def main():
     await runner.setup()
     site = web.TCPSite(runner, WEB_SERVER_HOST, WEB_SERVER_PORT)
     await site.start()
+    
+    logging.info(f"Веб-сервер запущен на порту {WEB_SERVER_PORT}")
+    
+    # Бесконечно ждем, пока не будет отменено
+    try:
+        await asyncio.Future()
+    except asyncio.CancelledError:
+        pass
+    finally:
+        await runner.cleanup()
 
+async def start_bot_polling():
+    """Запуск поллинга бота"""
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
+async def main():
+    init_db()
+    
+    # Создаем задачи для параллельного запуска
+    web_server_task = asyncio.create_task(start_web_server())
+    bot_task = asyncio.create_task(start_bot_polling())
+    
+    # Ждем завершения любой из задач
+    done, pending = await asyncio.wait(
+        [web_server_task, bot_task],
+        return_when=asyncio.FIRST_COMPLETED
+    )
+    
+    # Отменяем все оставшиеся задачи
+    for task in pending:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logging.info("Бот остановлен")
