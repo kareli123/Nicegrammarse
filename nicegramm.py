@@ -239,9 +239,8 @@ async def cmd_text(message: types.Message):
 
 # ================= START =================
 
-async def main():
-    init_db()
-
+async def start_web_server():
+    """Запуск веб-сервера"""
     app = web.Application()
     app.add_routes(routes)
 
@@ -249,9 +248,50 @@ async def main():
     await runner.setup()
     site = web.TCPSite(runner, WEB_SERVER_HOST, WEB_SERVER_PORT)
     await site.start()
+    
+    logging.info(f"Веб-сервер запущен на {WEB_SERVER_HOST}:{WEB_SERVER_PORT}")
+    
+    # Ожидаем вечно
+    await asyncio.Event().wait()
 
+async def start_bot():
+    """Запуск бота"""
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
+async def main():
+    """Основная функция запуска"""
+    init_db()
+    
+    # Создаем и запускаем обе задачи
+    web_task = asyncio.create_task(start_web_server())
+    bot_task = asyncio.create_task(start_bot())
+    
+    # Ожидаем выполнения одной из задач (или KeyboardInterrupt)
+    try:
+        await asyncio.gather(web_task, bot_task)
+    except KeyboardInterrupt:
+        logging.info("Остановка бота...")
+    except Exception as e:
+        logging.error(f"Ошибка: {e}")
+    finally:
+        # Отменяем задачи
+        web_task.cancel()
+        bot_task.cancel()
+        
+        # Ожидаем корректного завершения
+        try:
+            await web_task
+        except asyncio.CancelledError:
+            pass
+            
+        try:
+            await bot_task
+        except asyncio.CancelledError:
+            pass
+
 if __name__ == "__main__":
-    asyncio.run(main()) /start работает через час
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logging.info("Бот остановлен")
