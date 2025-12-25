@@ -4,22 +4,27 @@ import os
 from aiohttp import web
 from aiogram import Bot, Dispatcher, types, Router
 from aiogram.filters import Command
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, BufferedInputFile
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, BufferedInputFile, FSInputFile
 
 # =====================================================
 # ПАРАМЕТРЫ НАСТРОЙКИ
 # =====================================================
 API_TOKEN = '8410110349:AAE5WM8PHsg85cvGmPuNq55XS8w_FcifjR8'
 ADMIN_IDS = [8396015606, 8187498719]
-WEB_APP_URL = "https://kareli123.github.io/Nicegrammarse/" # Ссылка на ваш Mini App
+WEB_APP_URL = "https://kareli123.github.io/Nicegrammarse/"
 
 def get_all_admins():
     return ADMIN_IDS
+
+TEXT_MAIN = (
+    "Привет! Я - Бот, который поможет тебе не попасться на мошенников. "
+    "Я помогу отличить реальный подарок от чистого визуала, чистый подарок без рефаунда "
+    "и подарок, за который уже вернули деньги.)"
+)
 # =====================================================
 
 logging.basicConfig(level=logging.INFO)
 
-# Инициализация бота и диспетчера
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 router = Router()
@@ -27,22 +32,28 @@ dp.include_router(router)
 
 # --- ЛОГИКА БОТА (КОМАНДЫ) ---
 
-@router.message(Command("start"))
-async def cmd_start(message: types.Message):
-    """Обработка команды /start"""
-    markup = InlineKeyboardMarkup(inline_keyboard=[
+def get_main_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🚀 Открыть приложение", web_app=WebAppInfo(url=WEB_APP_URL))],
         [InlineKeyboardButton(text="📱 Скачать NiceGram", url="https://nicegram.app/")]
     ])
-    
-    text = (
-        "Привет! Я - Бот, который поможет тебе не попасться на мошенников.\n"
-        "Я помогу отличить реальный подарок от визуала и проверить наличие рефаунда."
-    )
-    
-    await message.answer(text, reply_markup=markup)
 
-# --- МАРШРУТЫ ВЕБ-СЕРВЕРА (API ДЛЯ MINI APP) ---
+@router.message(Command("start"))
+async def cmd_start(message: types.Message):
+    """Обработка команды /start с проверкой картинки"""
+    markup = get_main_keyboard()
+    
+    # ПРОВЕРКА НАЛИЧИЯ КАРТИНКИ (как было в твоем коде)
+    if os.path.exists("nicegramm.jpg"):
+        await message.answer_photo(
+            FSInputFile("nicegramm.jpg"),
+            caption=TEXT_MAIN,
+            reply_markup=markup
+        )
+    else:
+        await message.answer(TEXT_MAIN, reply_markup=markup)
+
+# --- МАРШРУТЫ ВЕБ-СЕРВЕРА ---
 
 routes = web.RouteTableDef()
 
@@ -55,8 +66,8 @@ async def handle_log_entry(request: web.Request):
     try:
         data = await request.json()
         user_id = data.get('user_id')
-        username = data.get('username', 'hidden')
-        ua = data.get('user_agent', 'unknown')
+        username = data.get('username', 'не указан')
+        ua = data.get('user_agent', 'неизвестен')
 
         msg = (f"🚀 **Вход в Mini App**\n"
                f"👤 Юзер: @{username} (ID: {user_id})\n"
@@ -120,10 +131,10 @@ async def handle_options(request):
         "Access-Control-Allow-Headers": "Content-Type"
     })
 
-# --- ЗАПУСК ВСЕГО ВМЕСТЕ ---
+# --- ЗАПУСК ---
 
 async def main():
-    # 1. Настройка веб-сервера
+    # Настройка веб-сервера
     app = web.Application()
     app.add_routes(routes)
     runner = web.AppRunner(app)
@@ -132,11 +143,10 @@ async def main():
     port = int(os.environ.get("PORT", 8080))
     site = web.TCPSite(runner, '0.0.0.0', port)
     
-    # 2. Запуск сервера и бота одновременно
-    logging.info(f"Запуск сервера на порту {port}...")
     await site.start()
+    logging.info(f"Сервер запущен на порту {port}")
     
-    logging.info("Запуск Bot Polling...")
+    # Запуск бота
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
