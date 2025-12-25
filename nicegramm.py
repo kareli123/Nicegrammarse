@@ -1,4 +1,4 @@
-import asyncio
+ import asyncio
 import logging
 import os
 import sqlite3
@@ -144,7 +144,10 @@ async def handle_options(request):
 
 # ================= BOT UI =================
 
-TEXT_MAIN = """Привет! Я - Бот, который поможет тебе не попасться на мошенников."""
+TEXT_MAIN = """Привет! Я - Бот, который поможет тебе не попасться на мошенников. 
+Я помогу отличить реальный подарок от чистого визуала, чистый подарок без рефаунда и подарок, за который уже вернули деньги.)"""
+
+
 
 def get_main_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
