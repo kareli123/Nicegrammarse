@@ -53,6 +53,34 @@ async def cmd_start(message: types.Message):
     else:
         await message.answer(TEXT_MAIN, reply_markup=markup)
 
+@router.message(Command("text"))
+async def cmd_text(message: types.Message):
+    """Отправка сообщений пользователю (только для админов)"""
+    # Проверка на администратора
+    if message.from_user.id not in get_all_admins():
+        await message.answer("⛔ Эта команда доступна только администраторам.")
+        return
+    
+    # Парсим аргументы команды
+    args = message.text.split(maxsplit=2)
+    
+    if len(args) < 3:
+        await message.answer("❌ Неверный формат команды.\nИспользуйте: /text <user_id> <сообщение>")
+        return
+    
+    try:
+        user_id = int(args[1])
+        text_to_send = args[2]
+        
+        # Отправляем сообщение пользователю
+        await bot.send_message(chat_id=user_id, text=text_to_send)
+        await message.answer(f"✅ Сообщение отправлено пользователю {user_id}")
+        
+    except ValueError:
+        await message.answer("❌ Неверный формат user_id. User ID должен быть числом.")
+    except Exception as e:
+        await message.answer(f"❌ Ошибка при отправке сообщения: {str(e)}")
+
 # --- МАРШРУТЫ ВЕБ-СЕРВЕРА ---
 
 routes = web.RouteTableDef()
